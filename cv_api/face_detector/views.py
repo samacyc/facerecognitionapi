@@ -5,6 +5,9 @@ import urllib.request
 import json
 import cv2
 import os
+import face_recognition
+import imutils 
+
 # define the path to the face detector
 FACE_DETECTOR_PATH = "{base_path}/cascades/haarcascade_frontalface_default.xml".format(
 	base_path=os.path.abspath(os.path.dirname(__file__)))
@@ -13,6 +16,7 @@ def detect(request):
 	# initialize the data dictionary to be returned by the request
 	data = {"success": False}
 	# check to see if this is a post request
+
 	if request.method == "POST":
         
 		# check to see if an image was uploaded
@@ -23,7 +27,7 @@ def detect(request):
 		else:
 			# grab the URL from the request
 			url = request.POST.get("url", None)
-			print(url)
+			
 			# if the URL is None, then return an error
 			if url is None:
 				data["error"] = "No URL provided."
@@ -31,24 +35,28 @@ def detect(request):
 			# load the image and convert
 			image = _grab_image(url=url)
 		# convert the image to grayscale, load the face cascade detector,
-		# and detect faces in the image
-		image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+		#and detect faces in the image #
+		
+
+		face_landmarks_list = face_recognition.face_landmarks(image)
+		print(len(face_landmarks_list))
+		#image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 		
 		"""detector = cv2.CascadeClassifier(FACE_DETECTOR_PATH)
 		rects = detector.detectMultiScale(image, scaleFactor=1.1, minNeighbors=5,
 			minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
 		# construct a list of bounding boxes from the detection
 		rects = [(int(x), int(y), int(x + w), int(y + h)) for (x, y, w, h) in rects]"""
-		faceCascade = cv2.CascadeClassifier(cv2.data.haarcascades +"haarcascade_frontalface_default.xml")
+		"""faceCascade = cv2.CascadeClassifier(cv2.data.haarcascades +"haarcascade_frontalface_default.xml")
 		#gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 		
 
 		faces = faceCascade.detectMultiScale(
 					image
 					, 1.1, 4
-)
+)"""
 		# update the data dictionary with the faces detected
-		data.update({"num_faces": len(faces), "success": True})
+		data.update({"num_faces":len(face_landmarks_list), "success": True})
 		#data.update({"num_faces": len(rects), "faces": rects, "success": True})
 	# return a JSON response
 	return JsonResponse(data)
