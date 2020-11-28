@@ -33,7 +33,7 @@ def detect(request):
 		# convert the image to grayscale, load the face cascade detector,
 		# and detect faces in the image
 		image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-		cv2.imwrite("image.png" , image)
+		
 		"""detector = cv2.CascadeClassifier(FACE_DETECTOR_PATH)
 		rects = detector.detectMultiScale(image, scaleFactor=1.1, minNeighbors=5,
 			minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
