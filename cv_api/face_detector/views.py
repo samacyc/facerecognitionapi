@@ -3,10 +3,32 @@ from django.http import JsonResponse
 import numpy as np
 import urllib.request
 import json
-import cv2
 import os
-import face_recognition
-import imutils 
+import cv2 as cv
+import math
+import time
+from langdetect import detect as dtc
+
+faceProto = "modelNweight/opencv_face_detector.pbtxt"
+faceModel = "modelNweight/opencv_face_detector_uint8.pb"
+
+ageProto = "modelNweight/age_deploy.prototxt"
+ageModel = "modelNweight/age_net.caffemodel"
+
+genderProto = "modelNweight/gender_deploy.prototxt"
+genderModel = "modelNweight/gender_net.caffemodel"
+
+MODEL_MEAN_VALUES = (78.4263377603, 87.7689143744, 114.895847746)
+ageList = ['(0-2)', '(4-6)', '(8-12)', '(15-20)', '(25-32)', '(38-43)', '(48-53)', '(60-100)']
+genderList = ['Male', 'Female']
+
+# Load network
+ageNet = cv.dnn.readNet(ageModel, ageProto)
+genderNet = cv.dnn.readNet(genderModel, genderProto)
+faceNet = cv.dnn.readNet(faceModel, faceProto)
+
+padding = 20
+
 
 # define the path to the face detector
 FACE_DETECTOR_PATH = "{base_path}/cascades/haarcascade_frontalface_default.xml".format(
@@ -18,6 +40,7 @@ def detect(request):
 	# check to see if this is a post request
 
 	if request.method == "POST":
+		
         
 		# check to see if an image was uploaded
 		if request.FILES.get("image", None) is not None:
@@ -26,7 +49,9 @@ def detect(request):
 		# otherwise, assume that a URL was passed in
 		else:
 			# grab the URL from the request
-			url = request.POST.get("url", None)
+			payload = (json.loads(request.body))
+			url = (payload["url"])
+			text = (payload["text"])
 			
 			# if the URL is None, then return an error
 			if url is None:
@@ -34,36 +59,19 @@ def detect(request):
 				return JsonResponse(data)
 			# load the image and convert
 			image = _grab_image(url=url)
-		# convert the image to grayscale, load the face cascade detector,
-		#and detect faces in the image #
+			data = age_gender_detector(image)
+			text = "What are the good things that have happened to you in this sucky 2020?"
+			lng = (dtc(text))
+			data = {
+				"face" : data , 
+				"language" : lng
+			}
 		
-
-		face_landmarks_list = face_recognition.face_landmarks(image)
-		print(len(face_landmarks_list))
-		#image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-		
-		"""detector = cv2.CascadeClassifier(FACE_DETECTOR_PATH)
-		rects = detector.detectMultiScale(image, scaleFactor=1.1, minNeighbors=5,
-			minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
-		# construct a list of bounding boxes from the detection
-		rects = [(int(x), int(y), int(x + w), int(y + h)) for (x, y, w, h) in rects]"""
-		"""faceCascade = cv2.CascadeClassifier(cv2.data.haarcascades +"haarcascade_frontalface_default.xml")
-		#gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-		
-
-		faces = faceCascade.detectMultiScale(
-					image
-					, 1.1, 4
-)"""
-		# update the data dictionary with the faces detected
-		data.update({"num_faces":len(face_landmarks_list), "success": True})
-		#data.update({"num_faces": len(rects), "faces": rects, "success": True})
-	# return a JSON response
 	return JsonResponse(data)
 def _grab_image(path=None, stream=None, url=None):
 	# if the path is not None, then load the image from disk
 	if path is not None:
-		image = cv2.imread(path)
+		image = cv.imread(path)
 	# otherwise, the image does not reside on disk
 	else:	
 		# if the URL is not None, then download the image
@@ -76,7 +84,71 @@ def _grab_image(path=None, stream=None, url=None):
 		# convert the image to a NumPy array and then read it into
 		# OpenCV format
 		image = np.asarray(bytearray(data), dtype="uint8")
-		image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+		image = cv.imdecode(image, cv.IMREAD_COLOR)
  
 	# return the image
 	return image
+
+
+
+
+
+
+def getFaceBox(net, frame, conf_threshold=0.7):
+    frameOpencvDnn = frame.copy()
+    frameHeight = frameOpencvDnn.shape[0]
+    frameWidth = frameOpencvDnn.shape[1]
+    blob = cv.dnn.blobFromImage(frameOpencvDnn, 1.0, (300, 300), [104, 117, 123], True, False)
+
+    net.setInput(blob)
+    detections = net.forward()
+    bboxes = []
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > conf_threshold:
+            x1 = int(detections[0, 0, i, 3] * frameWidth)
+            y1 = int(detections[0, 0, i, 4] * frameHeight)
+            x2 = int(detections[0, 0, i, 5] * frameWidth)
+            y2 = int(detections[0, 0, i, 6] * frameHeight)
+            bboxes.append([x1, y1, x2, y2])
+            cv.rectangle(frameOpencvDnn, (x1, y1), (x2, y2), (0, 255, 0), int(round(frameHeight/150)), 8)
+    return frameOpencvDnn, bboxes
+
+
+
+def age_gender_detector(frame):
+    # Read frame
+    t = time.time()
+    frameFace, bboxes = getFaceBox(faceNet, frame)
+    for bbox in bboxes:
+        # print(bbox)
+        face = frame[max(0,bbox[1]-padding):min(bbox[3]+padding,frame.shape[0]-1),max(0,bbox[0]-padding):min(bbox[2]+padding, frame.shape[1]-1)]
+
+        blob = cv.dnn.blobFromImage(face, 1.0, (227, 227), MODEL_MEAN_VALUES, swapRB=False)
+        genderNet.setInput(blob)
+        genderPreds = genderNet.forward()
+        gender = genderList[genderPreds[0].argmax()]
+        # print("Gender Output : {}".format(genderPreds))
+        print("Gender : {}, conf = {:.3f}".format(gender, genderPreds[0].max()))
+
+        ageNet.setInput(blob)
+        agePreds = ageNet.forward()
+        age = ageList[agePreds[0].argmax()]
+        print("Age Output : {}".format(agePreds))
+        print("Age : {}, conf = {:.3f}".format(age, agePreds[0].max()))
+
+        label = "{},{}".format(gender, age)
+        cv.putText(frameFace, label, (bbox[0], bbox[1]-10), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv.LINE_AA)
+    return {"Age" :age , "gender" : gender  }
+
+"""input_ = cv.imread("salma.jpeg")
+output = age_gender_detector(input_)
+
+cv.imshow("image", output) 
+  
+#waits for user to press any key  
+#(this is necessary to avoid Python kernel form crashing) 
+cv.waitKey(0)  
+  
+#closing all open windows  
+cv.destroyAllWindows() """
