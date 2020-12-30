@@ -60,7 +60,7 @@ def detect(request):
 			# load the image and convert
 			image = _grab_image(url=url)
 			data = age_gender_detector(image)
-			text = "What are the good things that have happened to you in this sucky 2020?"
+			text = text
 			lng = (dtc(text))
 			data = {
 				"face" : data , 
